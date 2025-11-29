@@ -92,15 +92,19 @@ pub fn print_pdf (options: PrintOptions) -> String {
         if options.id.is_empty() {
             cmd.arg("-print-to-default");
         } else {
+            // --- Start of fix: Remove extra quotes from printer name ---
+            let printer_name = options.id.trim_matches('"');
             cmd.arg("-print-to");
-            cmd.arg(&options.id);
+            cmd.arg(printer_name);
+            // --- End of fix ---
         }
 
         if !options.print_setting.is_empty() {
-            // Split settings by comma and then by equals sign for key-value pairs
-            for part in options.print_setting.split(',') {
-                cmd.arg(part.trim());
+            // --- Start of fix: Revert to splitting by whitespace for flexibility ---
+            for s in options.print_setting.split_whitespace() {
+                cmd.arg(s);
             }
+            // --- End of fix ---
         }
 
         cmd.arg("-silent");
@@ -111,7 +115,6 @@ pub fn print_pdf (options: PrintOptions) -> String {
         
         println!("Executing command: {:?}", cmd);
 
-        // --- Start of fix: Detailed error reporting ---
         let output_result = cmd.output();
 
         let response = match output_result {
@@ -131,7 +134,6 @@ pub fn print_pdf (options: PrintOptions) -> String {
                 format!("Failed to execute command: {}", e)
             }
         };
-        // --- End of fix ---
 
         sender.send(response).unwrap();
     });
