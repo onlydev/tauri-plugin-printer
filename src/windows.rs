@@ -1,11 +1,14 @@
 
-
 use std::process::Command;
 use std::{sync::mpsc, io::Write};
 use std::thread;
 use std::fs::File;
 use std::env;
 use crate::{declare::PrintOptions, fsys::remove_file};
+use std::os::windows::process::CommandExt;
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /**
  * Create sm.exe to temp
  */
@@ -39,12 +42,9 @@ pub fn get_printers() -> String {
 
     // Spawn a new thread
     thread::spawn(move || {
-        // let output: tauri_plugin_shell::process::Output = Command::new("powershell").args(["Get-Printer | Select-Object Name, DriverName, JobCount, PrintProcessor, PortName, ShareName, ComputerName, PrinterStatus, Shared, Type, Priority | ConvertTo-Json"]).output().unwrap();
-
-        let output = Command::new("powershell").args(["Get-Printer | Select-Object Name, DriverName, JobCount, PrintProcessor, PortName, ShareName, ComputerName, PrinterStatus, Shared, Type, Priority | ConvertTo-Json"]).output().unwrap();
-
-
-
+        let mut cmd = Command::new("powershell");
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.args(["Get-Printer | Select-Object Name, DriverName, JobCount, PrintProcessor, PortName, ShareName, ComputerName, PrinterStatus, Shared, Type, Priority | ConvertTo-Json"]).output().unwrap();
 
         sender.send(String::from_utf8(output.stdout).unwrap()).unwrap();
     });
@@ -62,10 +62,9 @@ pub fn get_printers() -> String {
  * Get printers by name on windows using powershell
  */
 pub fn get_printers_by_name(printername: String) -> String {
-    // let output = Command::new("powershell").args([format!("Get-Printer -Name \"{}\" | Select-Object Name, DriverName, JobCount, PrintProcessor, PortName, ShareName, ComputerName, PrinterStatus, Shared, Type, Priority | ConvertTo-Json", printername)]).output().unwrap();
-    // return output.stdout.to_string();
-
-    let output = Command::new("powershell").args([format!("Get-Printer -Name \"{}\" | Select-Object Name, DriverName, JobCount, PrintProcessor, PortName, ShareName, ComputerName, PrinterStatus, Shared, Type, Priority | ConvertTo-Json", printername)]).output().unwrap();
+    let mut cmd = Command::new("powershell");
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.args([format!("Get-Printer -Name \"{}\" | Select-Object Name, DriverName, JobCount, PrintProcessor, PortName, ShareName, ComputerName, PrinterStatus, Shared, Type, Priority | ConvertTo-Json", printername)]).output().unwrap();
 
     return String::from_utf8(output.stdout).unwrap();
 }
@@ -78,24 +77,43 @@ pub fn print_pdf (options: PrintOptions) -> String {
     println!("options print_setting {}", options.print_setting);
 
     let dir: std::path::PathBuf = env::temp_dir();
-    let print_setting: String = options.print_setting;
-    let mut print: String = "-print-to-default".to_owned();
-    if options.id.len() != 0 {
-        print = format!("-print-to {}", options.id).to_owned();
-    }
-    let shell_command = format!("{}sm.exe {} {} -silent {}", dir.display(), print, print_setting, options.path);
     
+    // --- Start of fix ---
+    // Extract values from `options` before it's moved into the thread.
+    let remove_after_print = options.remove_after_print;
+    let path_to_remove = options.path.clone();
+    // --- End of fix ---
 
     // Create a channel for communication
     let (sender, receiver) = mpsc::channel();
-    println!("{}", shell_command);
+    
     // Spawn a new thread
     thread::spawn(move || {
-        // let output: tauri_plugin_shell::process::Output = Command::new("powershell").args([shell_command]).output().unwrap();
+        let exe_path = format!("{}sm.exe", dir.display());
+        let mut cmd = Command::new(&exe_path);
 
-        // sender.send(output.stdout.to_string()).unwrap();
+        if options.id.is_empty() {
+            cmd.arg("-print-to-default");
+        } else {
+            cmd.arg("-print-to");
+            cmd.arg(&options.id);
+        }
 
-        let output = Command::new("powershell").args([shell_command]).output().unwrap();
+        if !options.print_setting.is_empty() {
+            for s in options.print_setting.split_whitespace() {
+                cmd.arg(s);
+            }
+        }
+
+        cmd.arg("-silent");
+        cmd.arg(&options.path);
+
+        // Hide console window
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        
+        println!("Executing command: {:?}", cmd);
+
+        let output = cmd.output().unwrap();
 
         sender.send(String::from_utf8(output.stdout).unwrap()).unwrap();
     });
@@ -105,11 +123,12 @@ pub fn print_pdf (options: PrintOptions) -> String {
     // Receive the result from the spawned thread
     let result = receiver.recv().unwrap();
     
-    
-
-    if options.remove_after_print == true {
-        let _ = remove_file(&options.path);
+    // --- Start of fix ---
+    // Use the variables we created before the thread.
+    if remove_after_print {
+        let _ = remove_file(&path_to_remove);
     }
+    // --- End of fix ---
     
     return result;
 }
@@ -119,10 +138,9 @@ pub fn print_pdf (options: PrintOptions) -> String {
  * Get printer job on windows using powershell
  */
 pub fn get_jobs(printername: String) -> String {
-    // let output = Command::new("powershell").args([format!("Get-PrintJob -PrinterName \"{}\"  | Select-Object DocumentName,Id,TotalPages,Position,Size,SubmmitedTime,UserName,PagesPrinted,JobTime,ComputerName,Datatype,PrinterName,Priority,SubmittedTime,JobStatus | ConvertTo-Json", printername)]).output().unwrap();
-    // return output.stdout.to_string();
-
-    let output = Command::new("powershell").args([format!("Get-PrintJob -PrinterName \"{}\"  | Select-Object DocumentName,Id,TotalPages,Position,Size,SubmmitedTime,UserName,PagesPrinted,JobTime,ComputerName,Datatype,PrinterName,Priority,SubmittedTime,JobStatus | ConvertTo-Json", printername)]).output().unwrap();
+    let mut cmd = Command::new("powershell");
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.args([format!("Get-PrintJob -PrinterName \"{}\"  | Select-Object DocumentName,Id,TotalPages,Position,Size,SubmmitedTime,UserName,PagesPrinted,JobTime,ComputerName,Datatype,PrinterName,Priority,SubmittedTime,JobStatus | ConvertTo-Json", printername)]).output().unwrap();
     return String::from_utf8(output.stdout).unwrap();
 }
 
@@ -130,10 +148,9 @@ pub fn get_jobs(printername: String) -> String {
  * Get printer job by id on windows using powershell
  */
 pub fn get_jobs_by_id(printername: String, jobid: String) -> String {
-    // let output = Command::new("powershell").args([format!("Get-PrintJob -PrinterName \"{}\" -ID \"{}\"  | Select-Object DocumentName,Id,TotalPages,Position,Size,SubmmitedTime,UserName,PagesPrinted,JobTime,ComputerName,Datatype,PrinterName,Priority,SubmittedTime,JobStatus | ConvertTo-Json", printername, jobid)]).output().unwrap();
-    // return output.stdout.to_string();
-
-    let output = Command::new("powershell").args([format!("Get-PrintJob -PrinterName \"{}\" -ID \"{}\"  | Select-Object DocumentName,Id,TotalPages,Position,Size,SubmmitedTime,UserName,PagesPrinted,JobTime,ComputerName,Datatype,PrinterName,Priority,SubmittedTime,JobStatus | ConvertTo-Json", printername, jobid)]).output().unwrap();
+    let mut cmd = Command::new("powershell");
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.args([format!("Get-PrintJob -PrinterName \"{}\" -ID \"{}\"  | Select-Object DocumentName,Id,TotalPages,Position,Size,SubmmitedTime,UserName,PagesPrinted,JobTime,ComputerName,Datatype,PrinterName,Priority,SubmittedTime,JobStatus | ConvertTo-Json", printername, jobid)]).output().unwrap();
     return String::from_utf8(output.stdout).unwrap();
 }
 
@@ -142,10 +159,9 @@ pub fn get_jobs_by_id(printername: String, jobid: String) -> String {
  * Resume printers job on windows using powershell
  */
 pub fn resume_job(printername: String, jobid: String) -> String {
-    // let output = Command::new("powershell").args([format!("Resume-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
-    // return output.stdout.to_string();
-
-    let output = Command::new("powershell").args([format!("Resume-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
+    let mut cmd = Command::new("powershell");
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.args([format!("Resume-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
     return String::from_utf8(output.stdout).unwrap();
 }
 
@@ -153,10 +169,9 @@ pub fn resume_job(printername: String, jobid: String) -> String {
  * Restart printers job on windows using powershell
  */
 pub fn restart_job(printername: String, jobid: String) -> String {
-    // let output = Command::new("powershell").args([format!("Restart-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
-    // return output.stdout.to_string();
-
-    let output = Command::new("powershell").args([format!("Restart-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
+    let mut cmd = Command::new("powershell");
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.args([format!("Restart-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
     return String::from_utf8(output.stdout).unwrap();
 }
 
@@ -164,10 +179,9 @@ pub fn restart_job(printername: String, jobid: String) -> String {
  * pause printers job on windows using powershell
  */
 pub fn pause_job(printername: String, jobid: String) -> String {
-    // let output = Command::new("powershell").args([format!("Suspend-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
-    // return output.stdout.to_string();
-
-    let output = Command::new("powershell").args([format!("Suspend-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
+    let mut cmd = Command::new("powershell");
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.args([format!("Suspend-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
     return String::from_utf8(output.stdout).unwrap();
 }
 
@@ -175,8 +189,8 @@ pub fn pause_job(printername: String, jobid: String) -> String {
  * remove printers job on windows using powershell
  */
 pub fn remove_job(printername: String, jobid: String) -> String {
-    // let output = Command::new("powershell").args([format!("Remove-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
-    // return output.stdout.to_string();
-    let output = Command::new("powershell").args([format!("Remove-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
+    let mut cmd = Command::new("powershell");
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.args([format!("Remove-PrintJob -PrinterName \"{}\" -ID \"{}\" ", printername, jobid)]).output().unwrap();
     return String::from_utf8(output.stdout).unwrap();
 }
