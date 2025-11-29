@@ -78,11 +78,8 @@ pub fn print_pdf (options: PrintOptions) -> String {
 
     let dir: std::path::PathBuf = env::temp_dir();
     
-    // --- Start of fix ---
-    // Extract values from `options` before it's moved into the thread.
     let remove_after_print = options.remove_after_print;
     let path_to_remove = options.path.clone();
-    // --- End of fix ---
 
     // Create a channel for communication
     let (sender, receiver) = mpsc::channel();
@@ -100,8 +97,9 @@ pub fn print_pdf (options: PrintOptions) -> String {
         }
 
         if !options.print_setting.is_empty() {
-            for s in options.print_setting.split_whitespace() {
-                cmd.arg(s);
+            // Split settings by comma and then by equals sign for key-value pairs
+            for part in options.print_setting.split(',') {
+                cmd.arg(part.trim());
             }
         }
 
@@ -113,9 +111,29 @@ pub fn print_pdf (options: PrintOptions) -> String {
         
         println!("Executing command: {:?}", cmd);
 
-        let output = cmd.output().unwrap();
+        // --- Start of fix: Detailed error reporting ---
+        let output_result = cmd.output();
 
-        sender.send(String::from_utf8(output.stdout).unwrap()).unwrap();
+        let response = match output_result {
+            Ok(output) => {
+                if output.status.success() {
+                    String::from_utf8(output.stdout).unwrap_or_else(|_| "Successfully executed, but stdout is not valid UTF-8".to_string())
+                } else {
+                    let stdout = String::from_utf8(output.stdout).unwrap_or_else(|_| "stdout: Invalid UTF-8".to_string());
+                    let stderr = String::from_utf8(output.stderr).unwrap_or_else(|_| "stderr: Invalid UTF-8".to_string());
+                    format!(
+                        "Command failed with status: {}\\nStdout:\\n{}\\nStderr:\\n{}",
+                        output.status, stdout, stderr
+                    )
+                }
+            }
+            Err(e) => {
+                format!("Failed to execute command: {}", e)
+            }
+        };
+        // --- End of fix ---
+
+        sender.send(response).unwrap();
     });
 
     // Do other non-blocking work on the main thread
@@ -123,12 +141,9 @@ pub fn print_pdf (options: PrintOptions) -> String {
     // Receive the result from the spawned thread
     let result = receiver.recv().unwrap();
     
-    // --- Start of fix ---
-    // Use the variables we created before the thread.
     if remove_after_print {
         let _ = remove_file(&path_to_remove);
     }
-    // --- End of fix ---
     
     return result;
 }
