@@ -19,26 +19,8 @@ const parseIfJSON = (str, dft = []) => {
         return dft;
     }
 };
-const encodeBase64 = (str) => {
-    if (typeof window === "undefined") {
-        // in nodejs
-        return buffer_1.Buffer.from(str, 'utf-8').toString('base64');
-    }
-    else {
-        // in browser
-        return window.btoa(str);
-    }
-};
-const decodeBase64 = (str) => {
-    if (typeof window === "undefined") {
-        // in nodejs
-        return buffer_1.Buffer.from(str, 'base64').toString('utf-8');
-    }
-    else {
-        // in browser
-        return window.atob(str);
-    }
-};
+const encodeBase64 = (str) => buffer_1.Buffer.from(str, 'utf-8').toString('base64');
+const decodeBase64 = (str) => buffer_1.Buffer.from(str, 'base64').toString('utf-8');
 /**
  * Get list printers.
  *

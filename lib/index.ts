@@ -18,24 +18,8 @@ const parseIfJSON = (str: string, dft: any = []): any => {
     }
 }
 
-const encodeBase64 = (str: string): string => {
-    if (typeof window === "undefined"){
-        // in nodejs
-        return Buffer.from(str, 'utf-8').toString('base64')
-    } else {
-        // in browser
-        return window.btoa(str)
-    }
-}
-const decodeBase64 = (str: string): string => {
-    if (typeof window === "undefined"){
-        // in nodejs
-        return Buffer.from(str, 'base64').toString('utf-8')
-    } else {
-        // in browser
-        return window.atob(str)
-    }
-}
+const encodeBase64 = (str: string): string => Buffer.from(str, 'utf-8').toString('base64')
+const decodeBase64 = (str: string): string => Buffer.from(str, 'base64').toString('utf-8')
 
 /**
  * Get list printers.
