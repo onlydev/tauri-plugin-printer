@@ -111,7 +111,8 @@ const print = async (data, options) => {
             image.width = 100,
                 image.height = 100;
             const response = await fetch(item.url);
-            image.src = `data:${mime_1.default.getType(item.url)};base64,${btoa(String.fromCharCode(...new Uint8Array(await response.arrayBuffer())))}`;
+            const imgBase64 = buffer_1.Buffer.from(await response.arrayBuffer()).toString('base64');
+            image.src = `data:${mime_1.default.getType(item.url)};base64,${imgBase64}`;
             if (item.width) {
                 image.width = item.width;
             }

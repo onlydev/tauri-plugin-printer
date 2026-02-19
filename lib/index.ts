@@ -116,7 +116,8 @@ export const print = async (data: PrintData[], options: PrintOptions): Promise<R
             image.height = 100
             const response = await fetch(item.url); 
             
-            image.src = `data:${mime.getType(item.url)};base64,${btoa(String.fromCharCode(...new Uint8Array(await response.arrayBuffer())))}`;
+            const imgBase64 = Buffer.from(await response.arrayBuffer()).toString('base64')
+            image.src = `data:${mime.getType(item.url)};base64,${imgBase64}`;
             if (item.width){
                 image.width = item.width
             }
